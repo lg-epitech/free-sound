@@ -8,7 +8,7 @@ A free macOS menu bar mixer. Pick which speakers and mic to use, rank your fallb
 
 I wanted two things from my Mac's audio. When I unplug my headphones, sound should go where I said, not wherever macOS feels like. And each app should have its own volume, so a call doesn't have to fight a video.
 
-The paid apps do this, and then they charge a subscription for it, want an account, and ship a kernel driver. That felt like a lot for a couple of sliders. So I made this one. No account, no driver, no money. It uses Apple's own Core Audio APIs and nothing else.
+The paid apps do this, and then they charge a subscription for it, want an account, and install their own audio driver. That felt like a lot for a couple of sliders. So I made this one. No account, no driver, no money. It uses Apple's own Core Audio APIs and nothing else.
 
 ## Install
 
