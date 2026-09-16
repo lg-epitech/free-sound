@@ -4,6 +4,8 @@
 
 FreeSound is a native SwiftUI view hosted in an AppKit window, with a menu bar item. `LSUIElement` and the accessory activation policy keep it out of the Dock. Closing the window hides it; quitting tears down audio processing. Launch at login uses `SMAppService.mainApp` and follows the same startup path, including showing the mixer.
 
+The waveform menu bar item remembers its position and supports a normal click to toggle the mixer or a right/Control-click for Show and Quit. Verify these on a desktop with enough menu bar space; macOS can hide items on crowded or notched displays.
+
 | Component | Responsibility |
 | --- | --- |
 | `FreeSoundApp.swift` | Application lifecycle, window, menu bar item, read-only JSON diagnostics, and view snapshots. |
@@ -39,17 +41,22 @@ Recorded during initial implementation on an Apple Silicon Mac with Swift 6.3 an
 
 Update this table only after executing the corresponding check. A successful build or a moving meter does not establish that sound reaches the intended output. An active I/O callback also does not establish that capture permission was granted.
 
+Menu bar and release changes were checked on September 16, 2026 with Swift 6.3 and macOS 26.5. The current Apple Silicon build passed all five DSP groups, 31 preference/priority checks, and read-only device checks. ZIP extraction, executable permissions, signature, checksum, version/build stamping, invalid metadata rejection, Actionlint 1.7.12, and shell syntax were checked. Computer use confirmed FreeSound was allowed in macOS Menu Bar settings; refreshing that setting and fully restarting the installed app restored its waveform icon, verified in a full-screen capture immediately left of Wi-Fi. The menu bar right-click interaction has not yet been manually verified.
+
 ## Automated checks
 
 ```sh
 ./scripts/test.sh
 ./scripts/build.sh
 ./dist/FreeSound.app/Contents/MacOS/FreeSound --diagnostics
+./scripts/package.sh
 ```
 
 `scripts/test.sh` compiles standalone C and Swift programs. This avoids the XCTest dependency, which is unavailable with the installed Command Line Tools alone. The C program runs with AddressSanitizer and UndefinedBehaviorSanitizer.
 
 The checks cover synthetic interleaved and planar audio, disabled microphone stream offsets, preferred output channels, gain, balance, mono, mute smoothing, short input buffers, sample bounds, nonfinite values, preference persistence, normalization, and default settings that do not require processing. The live Core Audio check reads device/process properties, validates IDs and capabilities, and repeats discovery. These checks do not create process taps or change live audio devices.
+
+GitHub Actions runs these checks and packages the app on macOS 15 runners for Apple Silicon and Intel. Hosted runners do not establish real hardware routing or audible results. Packaging verifies the executable architecture, extracts the ZIP, checks executable permissions and the extracted signature, and verifies its SHA-256 checksum. Version tags publish both archives only after both build jobs pass.
 
 `--diagnostics` lists real Core Audio devices, defaults, and process objects without starting the app controller or any audio tap. It can confirm enumeration, not routing.
 
@@ -60,6 +67,25 @@ For layout inspection, quit FreeSound and run:
 ```
 
 This opens the normal app, captures its own content view after startup, and exits. It uses saved preferences, so disable app controls before taking a snapshot if you want to avoid activating saved routes. Inspect the image for clipped labels, usable device menus, error text, and the small-window layout.
+
+## Releases
+
+GitHub Actions runs the checks, builds the app, verifies its signature, and uploads app ZIPs on pushes, pull requests, and manual workflow runs. Both architectures must pass before a release can be published. To publish a release, push a version tag on the commit to release:
+
+```sh
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+Tags must use `vX.Y.Z`. The workflow stamps the app version from the tag and the build number from the workflow run number, creates a draft, uploads both ZIPs and their `.sha256` checksums, then publishes the GitHub Release with generated notes. Only the release job has write permission; it uses GitHub's built-in token. Failed draft uploads can be rerun; published versions must be replaced by a new tag.
+
+To produce the same archive locally for this Mac's architecture:
+
+```sh
+FREESOUND_VERSION=0.1.1 FREESOUND_BUILD_NUMBER=2 ./scripts/package.sh
+```
+
+Without those variables, the scripts use the version in `Resources/Info.plist`. Archives and checksums are written to `dist/`.
 
 ## Optional live engine check
 

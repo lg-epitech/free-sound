@@ -27,7 +27,7 @@ struct FreeSoundMain {
             let devices = try SystemAudio.devices()
             let processes = try SystemAudio.processes()
             let payload: [String: Any] = [
-                "version": "0.1.0",
+                "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development",
                 "devices": devices.map { device -> [String: Any] in
                     var item: [String: Any] = ["id": device.id, "name": device.name, "uid": device.uid,
                                                "output": device.hasOutput, "input": device.hasInput]
@@ -61,13 +61,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         controller = AudioController()
         configureMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem.autosaveName = "FreeSoundMixer"
+        statusItem.isVisible = true
         if let button = statusItem.button {
             let image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "FreeSound")
             image?.isTemplate = true
+            image?.size = NSSize(width: 18, height: 18)
             button.image = image
+            button.setAccessibilityLabel("FreeSound audio mixer")
             button.toolTip = "FreeSound — audio mixer"
             button.target = self
-            button.action = #selector(toggleMixer)
+            button.action = #selector(statusItemClicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 720),
                           styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
@@ -117,6 +122,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func toggleMixer() {
         if window.isVisible && window.isKeyWindow { window.orderOut(nil) }
         else { showMixer() }
+    }
+
+    @objc private func statusItemClicked() {
+        let event = NSApplication.shared.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            let menu = NSMenu()
+            let show = menu.addItem(withTitle: "Show FreeSound", action: #selector(showMixer), keyEquivalent: "")
+            show.target = self
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Quit FreeSound", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+            // Attach only while tracking so a normal click still toggles the mixer.
+            statusItem.menu = menu
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
+        } else {
+            toggleMixer()
+        }
     }
 
     @objc private func showMixer() {
