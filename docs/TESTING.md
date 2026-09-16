@@ -68,6 +68,25 @@ For layout inspection, quit FreeSound and run:
 
 This opens the normal app, captures its own content view after startup, and exits. It uses saved preferences, so disable app controls before taking a snapshot if you want to avoid activating saved routes. Inspect the image for clipped labels, usable device menus, error text, and the small-window layout.
 
+## Releases
+
+GitHub Actions runs the checks, builds the app, verifies its signature, and uploads app ZIPs on pushes, pull requests, and manual workflow runs. Both architectures must pass before a release can be published. To publish a release, push a version tag on the commit to release:
+
+```sh
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+Tags must use `vX.Y.Z`. The workflow stamps the app version from the tag and the build number from the workflow run number, creates a draft, uploads both ZIPs and their `.sha256` checksums, then publishes the GitHub Release with generated notes. Only the release job has write permission; it uses GitHub's built-in token. Failed draft uploads can be rerun; published versions must be replaced by a new tag.
+
+To produce the same archive locally for this Mac's architecture:
+
+```sh
+FREESOUND_VERSION=0.1.1 FREESOUND_BUILD_NUMBER=2 ./scripts/package.sh
+```
+
+Without those variables, the scripts use the version in `Resources/Info.plist`. Archives and checksums are written to `dist/`.
+
 ## Optional live engine check
 
 ```sh
@@ -107,7 +126,7 @@ Start at a comfortable hardware volume with two applications playing different, 
 | Process lifecycle | Start, quit, and reopen a media app; test a browser with helper processes. Confirm rows and routes follow the correct application and saved settings reapply. |
 | Sleep and recovery | Sleep/wake with a route active; also change Bluetooth profiles where available. Verify playback resumes or an actionable error is shown. |
 | Exit and reset | Turn off App controls, reset an app, reset all mixes, and quit in separate trials. Each should restore affected apps' ordinary playback; resetting preserves favorites. |
-| Persistence and window | Relaunch and verify saved mix, favorites, filter, window position, and pin state. Closing the window should leave audio processing running; the menu bar icon should reopen it. |
+| Persistence and window | Relaunch and verify saved mix, favorites, filter, and pin state. The window should appear under the menu bar at the top right of the screen with the menu bar item, hide when another app is clicked unless pinned, hide on Escape, and leave audio processing running while hidden; the menu bar icon should reopen it. |
 | Launch at login | Install in `~/Applications`, enable the setting, approve the login item if requested, then log out/in. Expect one running copy and the mixer window shown. Disable the setting and verify the login item is removed. |
 
 Long playback sessions, CPU load, audible latency, dropouts, protected media, Bluetooth profile switching, and crash/driver failure recovery remain hardware validation work. Synthetic tests do not cover these conditions.
