@@ -122,13 +122,18 @@ enum SystemAudio {
         return rate
     }
 
-    static func setDefaultDevice(_ device: AudioObjectID, for role: SystemAudioRole) throws {
+    /// Whether the hardware allows this device to be the system default for the role.
+    static func canBeDefault(_ device: AudioObjectID, for role: SystemAudioRole) -> Bool {
         let scope = role == .input ? kAudioDevicePropertyScopeInput : kAudioDevicePropertyScopeOutput
         let selector = role == .soundEffects
             ? kAudioDevicePropertyDeviceCanBeDefaultSystemDevice
             : kAudioDevicePropertyDeviceCanBeDefaultDevice
         let eligible: UInt32 = (try? scalar(device, selector: selector, scope: scope)) ?? 0
-        guard eligible != 0 else {
+        return eligible != 0
+    }
+
+    static func setDefaultDevice(_ device: AudioObjectID, for role: SystemAudioRole) throws {
+        guard canBeDefault(device, for: role) else {
             throw SystemAudioError.unsupported("This device cannot be selected for that audio output or input.")
         }
         try setScalar(device, on: system, address: address(role.selector), operation: "Changing audio device")

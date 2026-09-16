@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.target = self
             button.action = #selector(toggleMixer)
         }
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 730, height: 700),
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 760),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                           backing: .buffered, defer: false)
         window.title = "FreeSound"
@@ -77,13 +77,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.appearance = NSAppearance(named: .darkAqua)
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 730, height: 480)
-        window.maxSize = NSSize(width: 1000, height: 1100)
+        window.minSize = NSSize(width: 480, height: 640)
+        window.maxSize = NSSize(width: 900, height: 1400)
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.delegate = self
-        window.contentView = NSHostingView(rootView: MixerView(audio: controller).padding(.top, 12).background(MixerTheme.background).ignoresSafeArea(.container, edges: .top))
-        window.setFrameAutosaveName("FreeSoundMixer")
-        if !window.setFrameUsingName("FreeSoundMixer") { window.center() }
+        window.contentView = NSHostingView(rootView: MixerView(audio: controller).padding(.top, 22).background(MixerTheme.background).ignoresSafeArea(.container, edges: .top))
+        window.setFrameAutosaveName("FreeSoundMixer2")
+        if !window.setFrameUsingName("FreeSoundMixer2") { window.center() }
         updatePin()
         pinObserver = NotificationCenter.default.addObserver(forName: .freeSoundPinChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.updatePin() }

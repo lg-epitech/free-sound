@@ -12,7 +12,7 @@ xcrun clang -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
   -framework CoreAudio -o "$CHECK_DIR/audio-dsp"
 "$CHECK_DIR/audio-dsp"
 
-xcrun swiftc Sources/FreeSound/Models/AudioPreferences.swift Tests/PreferencesChecks/main.swift \
+xcrun swiftc Sources/FreeSound/Models/AudioPreferences.swift Sources/FreeSound/Models/DevicePriority.swift Tests/PreferencesChecks/main.swift \
   -o "$CHECK_DIR/preferences"
 "$CHECK_DIR/preferences"
 
