@@ -27,7 +27,7 @@ struct FreeSoundMain {
             let devices = try SystemAudio.devices()
             let processes = try SystemAudio.processes()
             let payload: [String: Any] = [
-                "version": "0.1.0",
+                "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development",
                 "devices": devices.map { device -> [String: Any] in
                     var item: [String: Any] = ["id": device.id, "name": device.name, "uid": device.uid,
                                                "output": device.hasOutput, "input": device.hasInput]

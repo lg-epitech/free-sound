@@ -45,11 +45,14 @@ Update this table only after executing the corresponding check. A successful bui
 ./scripts/test.sh
 ./scripts/build.sh
 ./dist/FreeSound.app/Contents/MacOS/FreeSound --diagnostics
+./scripts/package.sh
 ```
 
 `scripts/test.sh` compiles standalone C and Swift programs. This avoids the XCTest dependency, which is unavailable with the installed Command Line Tools alone. The C program runs with AddressSanitizer and UndefinedBehaviorSanitizer.
 
 The checks cover synthetic interleaved and planar audio, disabled microphone stream offsets, preferred output channels, gain, balance, mono, mute smoothing, short input buffers, sample bounds, nonfinite values, preference persistence, normalization, and default settings that do not require processing. The live Core Audio check reads device/process properties, validates IDs and capabilities, and repeats discovery. These checks do not create process taps or change live audio devices.
+
+GitHub Actions runs these checks and packages the app on macOS 15 runners for Apple Silicon and Intel. Hosted runners do not establish real hardware routing or audible results. Packaging verifies the executable architecture, extracts the ZIP, checks executable permissions and the extracted signature, and verifies its SHA-256 checksum. Version tags publish both archives only after both build jobs pass.
 
 `--diagnostics` lists real Core Audio devices, defaults, and process objects without starting the app controller or any audio tap. It can confirm enumeration, not routing.
 
