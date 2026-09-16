@@ -24,7 +24,9 @@ Then build and launch the app:
 ./scripts/run.sh
 ```
 
-The mixer window opens when FreeSound launches. Use its waveform icon in the menu bar to show or hide it. Closing the window keeps the mixer running; choose **Quit FreeSound** in the gear menu to stop it. FreeSound does not appear in the Dock.
+The mixer window opens when FreeSound launches. Use its waveform icon in the **macOS menu bar** (the icons at the top right, near Wi-Fi and the clock) to show or hide it. Right-click or Control-click the icon for **Show FreeSound** and **Quit FreeSound**. Closing the window keeps the mixer running; you can also quit from the gear menu. FreeSound does not appear in the Dock.
+
+Hold Command and drag the waveform icon to rearrange it; macOS remembers its position. If it is missing, check **System Settings → Menu Bar → Allow in the Menu Bar → FreeSound** on macOS 26 or later, then quit and reopen FreeSound. On a crowded menu bar, also check any menu bar hiding app and make room for the icon, especially on displays with a camera notch.
 
 To build without launching, run `./scripts/build.sh`. The result is `dist/FreeSound.app`. To copy it into your user Applications folder, run `./scripts/build.sh --install`, then open `~/Applications/FreeSound.app`. Quit a running copy before replacing it. `--debug` is also available on both scripts.
 

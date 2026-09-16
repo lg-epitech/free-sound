@@ -4,6 +4,8 @@
 
 FreeSound is a native SwiftUI view hosted in an AppKit window, with a menu bar item. `LSUIElement` and the accessory activation policy keep it out of the Dock. Closing the window hides it; quitting tears down audio processing. Launch at login uses `SMAppService.mainApp` and follows the same startup path, including showing the mixer.
 
+The waveform menu bar item remembers its position and supports a normal click to toggle the mixer or a right/Control-click for Show and Quit. Verify these on a desktop with enough menu bar space; macOS can hide items on crowded or notched displays.
+
 | Component | Responsibility |
 | --- | --- |
 | `FreeSoundApp.swift` | Application lifecycle, window, menu bar item, read-only JSON diagnostics, and view snapshots. |
@@ -38,6 +40,8 @@ Recorded during initial implementation on an Apple Silicon Mac with Swift 6.3 an
 | Listening, app first-run permission flow, device switching/disconnects, sleep recovery, login item | Not yet manually verified. |
 
 Update this table only after executing the corresponding check. A successful build or a moving meter does not establish that sound reaches the intended output. An active I/O callback also does not establish that capture permission was granted.
+
+Menu bar and release changes were checked on September 16, 2026 with Swift 6.3 and macOS 26.5. The current Apple Silicon build passed all five DSP groups, 31 preference/priority checks, and read-only device checks. ZIP extraction, executable permissions, signature, checksum, version/build stamping, invalid metadata rejection, Actionlint 1.7.12, and shell syntax were checked. Computer use confirmed FreeSound was allowed in macOS Menu Bar settings; refreshing that setting and fully restarting the installed app restored its waveform icon, verified in a full-screen capture immediately left of Wi-Fi. The menu bar right-click interaction has not yet been manually verified.
 
 ## Automated checks
 
