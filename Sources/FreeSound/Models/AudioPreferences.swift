@@ -23,8 +23,23 @@ struct AudioPreferences: Codable {
     var controlsEnabled = false
     var pinned = false
     var onlyFavorites = false
+    var outputPriority = DevicePriority()
+    var inputPriority = DevicePriority()
 
     static let storageKey = "FreeSound.preferences.v1"
+
+    init() {}
+
+    /// Every key is optional so preferences written by an older build keep loading.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        apps = try container.decodeIfPresent([String: AppAudioSettings].self, forKey: .apps) ?? [:]
+        controlsEnabled = try container.decodeIfPresent(Bool.self, forKey: .controlsEnabled) ?? false
+        pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        onlyFavorites = try container.decodeIfPresent(Bool.self, forKey: .onlyFavorites) ?? false
+        outputPriority = try container.decodeIfPresent(DevicePriority.self, forKey: .outputPriority) ?? DevicePriority()
+        inputPriority = try container.decodeIfPresent(DevicePriority.self, forKey: .inputPriority) ?? DevicePriority()
+    }
 
     static func load(from defaults: UserDefaults = .standard) -> AudioPreferences {
         guard let data = defaults.data(forKey: storageKey),

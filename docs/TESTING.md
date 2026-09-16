@@ -7,12 +7,15 @@ FreeSound is a native SwiftUI view hosted in an AppKit window, with a menu bar i
 | Component | Responsibility |
 | --- | --- |
 | `FreeSoundApp.swift` | Application lifecycle, window, menu bar item, read-only JSON diagnostics, and view snapshots. |
-| `Views/MixerView.swift` | System and app controls, favorites, filtering, meters, and errors. |
-| `Models/AudioController.swift` | Main-thread coordination, process grouping, device discovery, route reconciliation, and login item registration. Devices and processes refresh every 1.5 seconds. |
-| `Models/AudioPreferences.swift` | JSON preferences in `UserDefaults`, keyed by application bundle identity. Stores volume, mute, balance, route UID, favorite, boost, and window options. |
+| `Views/MixerView.swift` | Output and input priority lists, hardware volume, app controls, favorites, filtering, and errors. |
+| `Models/AudioController.swift` | Main-thread coordination, process grouping, device discovery, device priority enforcement, route reconciliation, and login item registration. Devices and processes refresh every 1.5 seconds. |
+| `Models/AudioPreferences.swift` | JSON preferences in `UserDefaults`, keyed by application bundle identity. Stores volume, mute, balance, route UID, favorite, boost, window options, and device priorities. Every key is optional so older preferences keep loading. |
+| `Models/DevicePriority.swift` | An ordered list of remembered devices for one role. Pure value type: learns connected devices, answers which one should be in use, and reorders. |
 | `Audio/SystemAudio.swift` | Core Audio hardware queries and writable default-device, volume, and mute properties. |
 | `Audio/ProcessAudioEngine.swift` | One private stereo process tap and aggregate device for each adjusted app. The selected output supplies the clock; Core Audio drift compensation synchronizes the tap. Physical microphone streams in duplex hardware are disabled for the route. |
 | `AudioDSP/AudioDSP.c` | A preallocated C audio callback with atomic controls, gain smoothing, balance, channel mapping, mono downmix, sample bounds, and a peak meter. No allocation or locks in the render callback. |
+
+Device priorities are applied by the controller when the set of connected devices for a role changes, including at launch and after wake. It sets the system default to the first connected device in the list. Between such events the user may pick any device, in FreeSound or in macOS, and the choice stands. Reordering the list applies it immediately. Devices that cannot be a system default for the role are left out.
 
 An app at its default mix does not need a tap. Once an adjustment requires processing, the controller creates a route and the tap mutes the app's original stream only while it is being read. Disabling controls, resetting the mix, or quitting stops routes. A missing saved output falls back to the system output; reconnecting it triggers route reconciliation. These are implementation behaviors to validate with actual playback, not evidence that every driver handles them correctly.
 
@@ -27,10 +30,10 @@ Recorded during initial implementation on an Apple Silicon Mac with Swift 6.3 an
 | Native icon generation and visual inspection | Passed. |
 | Full release build and local bundle signature | Passed. |
 | C DSP checks | All five groups passed with AddressSanitizer and UndefinedBehaviorSanitizer, including the final run after engine fixes. |
-| Preference checks | All 12 checks passed. |
+| Preference checks | All 31 checks passed, including device priority ordering and loading of preferences written before priorities existed. |
 | Live read-only Core Audio checks | Passed: five devices, four readable volume capabilities, four mute capabilities, and five sample rates. Audio process counts varied from 39 to 41 as processes changed. No live settings changed. |
 | JSON diagnostics and native mixer snapshot | Executed; snapshot visually inspected. |
-| Native UI interaction | Opened the output device menu, expanded balance/boost controls, searched for Arc, toggled a favorite and restored it, and verified Quit. |
+| Native UI interaction | Recorded on the original layout: opened the output device menu, expanded balance/boost controls, searched for Arc, toggled a favorite and restored it, and verified Quit. The priority-list redesign was checked by snapshot only, including a simulated unplugged device. Drag reordering, the context menu, and click-to-use have not been exercised by hand. |
 | Live synthetic process-tap routes | Passed to WH-1000XM4 at 44.1 kHz and MacBook Pro Speakers at 48 kHz: captured signal, half gain, mute, clean teardown, and unchanged default output. See measured results below. |
 | Listening, app first-run permission flow, device switching/disconnects, sleep recovery, login item | Not yet manually verified. |
 
@@ -84,18 +87,19 @@ Start at a comfortable hardware volume with two applications playing different, 
 
 | Case | Procedure and expected observation |
 | --- | --- |
-| System controls | Switch output, input, and sound-effects devices. Confirm macOS reports the same defaults. Adjust supported output/input hardware volume and mute. Sound effects use their selected device volume; there is no independent alert slider. |
-| First capture permission | On a fresh permission state, enable app controls and adjust one playing app. Respond to the system audio recording prompt. Verify only that app changes, with no duplicate original playback. Unchanged apps should stay on their ordinary audio path. |
-| Permission denial and recovery | Deny capture access and check for an actionable error or silent-capture failure. Disable app controls to restore original playback. Grant access in Privacy & Security, quit/reopen, and retry. Report any UI that claims mixing while audio is unavailable. |
+| System controls | Click a device in the output and input lists and confirm macOS reports the same defaults. Adjust supported output/input hardware volume and mute. Change the sound effects device. Sound effects use their selected device volume; there is no independent alert slider. |
+| Device priority | Drag a lower device to the top and confirm the default switches to it at once. Right-click and use Move up, Move down, and Move to top. Unplug the device in use and confirm the next connected device in the list takes over and the unplugged one shows Not connected. Plug it back in and confirm it is used again. Plug in a device never seen before and confirm it appears first. Pick a lower device by clicking, then plug or unplug something and confirm the list is applied again. Hover an unplugged device and forget it. |
+| First capture permission | On a fresh permission state, adjust one playing app; mixing turns on by itself. Respond to the system audio recording prompt. Verify only that app changes, with no duplicate original playback. Unchanged apps should stay on their ordinary audio path. |
+| Permission denial and recovery | Deny capture access and check for an actionable error or silent-capture failure. Turn off App controls in the gear menu to restore original playback. Grant access in Privacy & Security, quit/reopen, and retry. Report any UI that claims mixing while audio is unavailable. |
 | Volume and mute isolation | Reduce one app from 100% to 25%, mute, then unmute. Confirm the other app is unaffected and no original stream remains audible. Return to defaults and confirm ordinary playback resumes. |
 | Output routing | Route one app to headphones and another to built-in speakers. Listen to each output separately, then change the system default. Explicit routes should stay on their selected device; system routes should follow the default. |
-| Headphone disconnect | While routed to headphones, disconnect them. Expect fallback to the system output and **Unavailable · using system** in the app row. Audio may become audible on speakers. Reconnect and verify the saved route returns without duplicate output or repeated errors. |
+| Headphone disconnect | While routed to headphones, disconnect them. Expect fallback to the system output and an orange arrow in the app row. Audio may become audible on speakers. Reconnect and verify the saved route returns without duplicate output or repeated errors. |
 | Fixed hardware volume | Select HDMI, USB, or another device without writable hardware volume. The system row should show **Fixed** with its volume slider disabled. Selection and supported mute remain independent. Verify per-app volume separately. |
 | Unsupported format/device | Try available mono, multichannel, or nonstandard devices and sample rates. Supported 32-bit float PCM streams should have correct channels; unsupported formats should report an error without leaving the app muted after controls are disabled. |
 | Balance and boost | Use stereo content to confirm left/right balance. Enable boost on quiet content and verify gain above 100%; loud peaks may clip. Reset and confirm the original mix. |
 | Process lifecycle | Start, quit, and reopen a media app; test a browser with helper processes. Confirm rows and routes follow the correct application and saved settings reapply. |
 | Sleep and recovery | Sleep/wake with a route active; also change Bluetooth profiles where available. Verify playback resumes or an actionable error is shown. |
-| Exit and reset | Disable app controls, reset an app, reset all mixes, and quit in separate trials. Each should restore affected apps' ordinary playback; resetting preserves favorites. |
+| Exit and reset | Turn off App controls, reset an app, reset all mixes, and quit in separate trials. Each should restore affected apps' ordinary playback; resetting preserves favorites. |
 | Persistence and window | Relaunch and verify saved mix, favorites, filter, window position, and pin state. Closing the window should leave audio processing running; the menu bar icon should reopen it. |
 | Launch at login | Install in `~/Applications`, enable the setting, approve the login item if requested, then log out/in. Expect one running copy and the mixer window shown. Disable the setting and verify the login item is removed. |
 

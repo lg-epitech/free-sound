@@ -22,6 +22,15 @@ struct AudioApplication: Identifiable {
     var isPlaying: Bool
 }
 
+/// One line of a priority list as shown to the user.
+struct PriorityEntry: Identifiable {
+    let device: RememberedDevice
+    let rank: Int
+    let connected: Bool
+    let active: Bool
+    var id: String { device.uid }
+}
+
 @MainActor
 final class AudioController: ObservableObject {
     @Published var devices: [AudioDevice] = []
@@ -30,7 +39,6 @@ final class AudioController: ObservableObject {
     @Published var preferences = AudioPreferences.load()
     @Published var errorMessage: String?
     @Published var appErrors: [String: String] = [:]
-    @Published var levels: [String: Float] = [:]
     @Published var controlledApps: Set<String> = []
     @Published var search = ""
     @Published var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -48,9 +56,10 @@ final class AudioController: ObservableObject {
     private var sleeping = false
     private var engines: [String: ManagedEngine] = [:]
     private var refreshTimer: Timer?
-    private var meterTimer: Timer?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var volumeBeforeMute: [AudioObjectID: Float] = [:]
+    /// Connected device UIDs per role at the last refresh, used to notice plug and unplug events.
+    private var connectedUIDs: [SystemAudioRole: Set<String>] = [:]
 
     var outputDevices: [AudioDevice] { devices.filter(\.hasOutput) }
     var inputDevices: [AudioDevice] { devices.filter(\.hasInput) }
@@ -73,11 +82,7 @@ final class AudioController: ObservableObject {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
-        meterTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.readMeters() }
-        }
         if let refreshTimer { RunLoop.main.add(refreshTimer, forMode: .common) }
-        if let meterTimer { RunLoop.main.add(meterTimer, forMode: .common) }
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.sleeping = true; self?.stopEngines() }
@@ -87,13 +92,17 @@ final class AudioController: ObservableObject {
         })
     }
 
+    // MARK: Applications
+
     func settings(for id: String) -> AppAudioSettings { preferences.apps[id] ?? AppAudioSettings() }
 
+    /// Any adjustment turns application mixing on; the first tap prompts macOS for capture permission.
     func update(_ id: String, _ mutation: (inout AppAudioSettings) -> Void) {
         var settings = settings(for: id)
         mutation(&settings)
         settings.normalize()
         preferences.apps[id] = settings
+        if !preferences.controlsEnabled, settings.needsProcessing { preferences.controlsEnabled = true }
         preferences.save()
         appErrors[id] = nil
         reconcileEngines()
@@ -138,6 +147,54 @@ final class AudioController: ObservableObject {
         } catch { errorMessage = "Couldn’t change launch at login: \(error.localizedDescription)" }
     }
 
+    // MARK: System devices
+
+    func channel(for role: SystemAudioRole) -> SystemChannel? { channels.first { $0.role == role } }
+
+    func device(uid: String?) -> AudioDevice? { devices.first { $0.uid == uid } }
+
+    func deviceName(uid: String) -> String? {
+        device(uid: uid)?.name ?? preferences.outputPriority.name(of: uid) ?? preferences.inputPriority.name(of: uid)
+    }
+
+    func priorityEntries(for role: SystemAudioRole) -> [PriorityEntry] {
+        let connected = Set(eligibleDevices(for: role).map(\.uid))
+        let activeID = channel(for: role)?.deviceID
+        let activeUID = devices.first { $0.id == activeID }?.uid
+        return priority(for: role).devices.enumerated().map { index, device in
+            PriorityEntry(device: device, rank: index + 1, connected: connected.contains(device.uid), active: device.uid == activeUID)
+        }
+    }
+
+    /// Switches to a device now. The priority order is unchanged, so the next plug or unplug applies it again.
+    func useDevice(_ uid: String, for role: SystemAudioRole) {
+        guard let device = device(uid: uid) else { return }
+        setDevice(device.id, for: role)
+    }
+
+    func movePriority(for role: SystemAudioRole, fromOffsets source: IndexSet, toOffset destination: Int) {
+        updatePriority(for: role) { $0.move(fromOffsets: source, toOffset: destination) }
+    }
+
+    func movePriority(for role: SystemAudioRole, uid: String, by offset: Int) {
+        updatePriority(for: role) { $0.move(uid, by: offset) }
+    }
+
+    func movePriorityToTop(for role: SystemAudioRole, uid: String) {
+        updatePriority(for: role) { $0.moveToTop(uid) }
+    }
+
+    func forgetDevice(_ uid: String, for role: SystemAudioRole) {
+        updatePriority(for: role) { $0.forget(uid) }
+    }
+
+    func setDevice(_ id: AudioObjectID, for role: SystemAudioRole) {
+        do {
+            try SystemAudio.setDefaultDevice(id, for: role)
+            refresh()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     func setSystemVolume(_ value: Float, channel: SystemChannel) {
         do {
             try SystemAudio.setVolume(value, of: channel.deviceID, input: channel.input)
@@ -164,17 +221,11 @@ final class AudioController: ObservableObject {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    func setDevice(_ id: AudioObjectID, channel: SystemChannel) {
-        do {
-            try SystemAudio.setDefaultDevice(id, for: channel.role)
-            refresh()
-        } catch { errorMessage = error.localizedDescription }
-    }
-
     func refresh() {
         do {
             devices = try SystemAudio.devices()
             refreshChannels()
+            applyPriorities()
             applications = discoverApplications(try SystemAudio.processes())
             reconcileEngines()
         } catch { errorMessage = error.localizedDescription }
@@ -193,6 +244,55 @@ final class AudioController: ObservableObject {
                                  muted: id == "effects" ? nil : SystemAudio.isMuted(device, input: id == "input"))
         }
     }
+
+    private func priority(for role: SystemAudioRole) -> DevicePriority {
+        role == .input ? preferences.inputPriority : preferences.outputPriority
+    }
+
+    private func eligibleDevices(for role: SystemAudioRole) -> [AudioDevice] {
+        (role == .input ? inputDevices : outputDevices).filter { SystemAudio.canBeDefault($0.id, for: role) }
+    }
+
+    private func updatePriority(for role: SystemAudioRole, _ mutation: (inout DevicePriority) -> Void) {
+        if role == .input { mutation(&preferences.inputPriority) } else { mutation(&preferences.outputPriority) }
+        preferences.save()
+        enforcePriority(for: role)
+    }
+
+    /// Learns connected devices and, whenever a device appears or disappears, switches to the
+    /// highest-ranked connected device.
+    private func applyPriorities() {
+        for role in [SystemAudioRole.output, .input] {
+            let eligible = eligibleDevices(for: role)
+            let activeID = channel(for: role)?.deviceID
+            let activeUID = devices.first { $0.id == activeID }?.uid
+            var priority = priority(for: role)
+            priority.learn(connected: eligible.map { RememberedDevice(uid: $0.uid, name: $0.name, symbol: $0.symbolName) },
+                           current: activeUID)
+            if priority != self.priority(for: role) {
+                if role == .input { preferences.inputPriority = priority } else { preferences.outputPriority = priority }
+                preferences.save()
+            }
+            let connected = Set(eligible.map(\.uid))
+            if connectedUIDs[role] != connected {
+                connectedUIDs[role] = connected
+                enforcePriority(for: role)
+            }
+        }
+    }
+
+    private func enforcePriority(for role: SystemAudioRole) {
+        let connected = Set(eligibleDevices(for: role).map(\.uid))
+        let activeID = channel(for: role)?.deviceID
+        guard let preferred = priority(for: role).preferred(connected: connected),
+              let device = device(uid: preferred), device.id != activeID else { return }
+        do {
+            try SystemAudio.setDefaultDevice(device.id, for: role)
+            refreshChannels()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    // MARK: Application discovery and routing
 
     private func discoverApplications(_ processes: [AudioProcessInfo]) -> [AudioApplication] {
         let running = NSWorkspace.shared.runningApplications.filter { $0.bundleIdentifier != Bundle.main.bundleIdentifier && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
@@ -243,7 +343,6 @@ final class AudioController: ObservableObject {
         let wanted = Set(applications.filter { settings(for: $0.id).needsProcessing && !$0.processIDs.isEmpty }.map(\.id))
         for id in Array(engines.keys) where !wanted.contains(id) {
             engines.removeValue(forKey: id)?.engine.stop()
-            levels[id] = nil
             attemptedRoutes[id] = nil
         }
         let defaultOutput = channels.first { $0.id == "output" }?.deviceID
@@ -290,25 +389,15 @@ final class AudioController: ObservableObject {
         reconcileEngines()
     }
 
-    private func readMeters() {
-        var next: [String: Float] = [:]
-        for (id, managed) in engines {
-            next[id] = max(managed.engine.peakLevel, (levels[id] ?? 0) * 0.78)
-        }
-        if !next.isEmpty || !levels.isEmpty { levels = next }
-    }
-
     private func stopEngines() {
         for managed in engines.values { managed.engine.stop() }
         engines.removeAll()
         attemptedRoutes.removeAll()
-        levels.removeAll()
         controlledApps.removeAll()
     }
 
     func shutdown() {
         refreshTimer?.invalidate()
-        meterTimer?.invalidate()
         for observer in workspaceObservers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
         workspaceObservers.removeAll()
         stopEngines()
