@@ -24,11 +24,36 @@ Then build and launch the app:
 ./scripts/run.sh
 ```
 
-The mixer window opens when FreeSound launches. Use its waveform icon in the menu bar to show or hide it. Closing the window keeps the mixer running; choose **Quit FreeSound** in the gear menu to stop it. FreeSound does not appear in the Dock.
+The mixer window opens when FreeSound launches. Use its waveform icon in the **macOS menu bar** (the icons at the top right, near Wi-Fi and the clock) to show or hide it. Right-click or Control-click the icon for **Show FreeSound** and **Quit FreeSound**. Closing the window keeps the mixer running; you can also quit from the gear menu. FreeSound does not appear in the Dock.
+
+Hold Command and drag the waveform icon to rearrange it; macOS remembers its position. If it is missing, check **System Settings → Menu Bar → Allow in the Menu Bar → FreeSound** on macOS 26 or later, then quit and reopen FreeSound. On a crowded menu bar, also check any menu bar hiding app and make room for the icon, especially on displays with a camera notch.
 
 To build without launching, run `./scripts/build.sh`. The result is `dist/FreeSound.app`. To copy it into your user Applications folder, run `./scripts/build.sh --install`, then open `~/Applications/FreeSound.app`. Quit a running copy before replacing it. `--debug` is also available on both scripts.
 
-The scripts create an original app icon and sign the bundle locally. No Apple developer account, certificate, or paid membership is required. Local signing is for running your own build; this project does not provide a notarized release for distribution.
+The scripts create an original app icon and sign the bundle locally. No Apple developer account, certificate, or paid membership is required. Builds are ad hoc signed, not Apple-notarized.
+
+## Downloads and releases
+
+Download the ZIP for your Mac from [GitHub Releases](https://github.com/lg-epitech/free-sound/releases): **arm64** for Apple Silicon, **x86_64** for Intel. Extract it, move `FreeSound.app` to `~/Applications` or `/Applications`, and open it. macOS may block the first launch of these non-notarized builds. After attempting to open it, use **System Settings → Privacy & Security → Open Anyway** if you trust the release. Each ZIP has a `.sha256` checksum file.
+
+GitHub Actions runs the checks, builds the app, verifies its signature, and uploads app ZIPs on pushes, pull requests, and manual workflow runs. Both architectures must pass before a release can be published. The app is zipped before artifact upload so its executable permissions and bundle structure survive the download.
+
+To publish a new release after the workflow is merged, push a version tag on the commit to release:
+
+```sh
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+Tags must use `vX.Y.Z`. The workflow stamps the app version from the tag and the build number from the workflow run number. It creates a draft, uploads both ZIPs and their checksums, then publishes the GitHub Release with generated notes. Only the release job has write permission; it uses GitHub's built-in token and needs no additional secrets. Failed draft uploads can be rerun; already published versions must be replaced by a new version tag.
+
+To produce the same archive locally for your Mac's architecture:
+
+```sh
+FREESOUND_VERSION=0.1.1 FREESOUND_BUILD_NUMBER=2 ./scripts/package.sh
+```
+
+Without those variables, the scripts use the version in `Resources/Info.plist`. Archives and checksums are written to `dist/`.
 
 ## What it does
 

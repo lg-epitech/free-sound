@@ -4,6 +4,8 @@
 
 FreeSound is a native SwiftUI view hosted in an AppKit window, with a menu bar item. `LSUIElement` and the accessory activation policy keep it out of the Dock. Closing the window hides it; quitting tears down audio processing. Launch at login uses `SMAppService.mainApp` and follows the same startup path, including showing the mixer.
 
+The waveform menu bar item remembers its position and supports a normal click to toggle the mixer or a right/Control-click for Show and Quit. Verify these on a desktop with enough menu bar space; macOS can hide items on crowded or notched displays.
+
 | Component | Responsibility |
 | --- | --- |
 | `FreeSoundApp.swift` | Application lifecycle, window, menu bar item, read-only JSON diagnostics, and view snapshots. |
@@ -39,17 +41,22 @@ Recorded during initial implementation on an Apple Silicon Mac with Swift 6.3 an
 
 Update this table only after executing the corresponding check. A successful build or a moving meter does not establish that sound reaches the intended output. An active I/O callback also does not establish that capture permission was granted.
 
+Menu bar and release changes were checked on September 16, 2026 with Swift 6.3 and macOS 26.5. The current Apple Silicon build passed all five DSP groups, 31 preference/priority checks, and read-only device checks. ZIP extraction, executable permissions, signature, checksum, version/build stamping, invalid metadata rejection, Actionlint 1.7.12, and shell syntax were checked. Computer use confirmed FreeSound was allowed in macOS Menu Bar settings; refreshing that setting and fully restarting the installed app restored its waveform icon, verified in a full-screen capture immediately left of Wi-Fi. The menu bar right-click interaction has not yet been manually verified.
+
 ## Automated checks
 
 ```sh
 ./scripts/test.sh
 ./scripts/build.sh
 ./dist/FreeSound.app/Contents/MacOS/FreeSound --diagnostics
+./scripts/package.sh
 ```
 
 `scripts/test.sh` compiles standalone C and Swift programs. This avoids the XCTest dependency, which is unavailable with the installed Command Line Tools alone. The C program runs with AddressSanitizer and UndefinedBehaviorSanitizer.
 
 The checks cover synthetic interleaved and planar audio, disabled microphone stream offsets, preferred output channels, gain, balance, mono, mute smoothing, short input buffers, sample bounds, nonfinite values, preference persistence, normalization, and default settings that do not require processing. The live Core Audio check reads device/process properties, validates IDs and capabilities, and repeats discovery. These checks do not create process taps or change live audio devices.
+
+GitHub Actions runs these checks and packages the app on macOS 15 runners for Apple Silicon and Intel. Hosted runners do not establish real hardware routing or audible results. Packaging verifies the executable architecture, extracts the ZIP, checks executable permissions and the extracted signature, and verifies its SHA-256 checksum. Version tags publish both archives only after both build jobs pass.
 
 `--diagnostics` lists real Core Audio devices, defaults, and process objects without starting the app controller or any audio tap. It can confirm enumeration, not routing.
 

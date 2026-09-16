@@ -16,6 +16,7 @@ Usage: ./scripts/build.sh [--debug] [--install]
   --help     Show this message.
 
 Requires macOS 14.2 or later and Apple's Command Line Tools.
+Set FREESOUND_VERSION (X.Y.Z) and FREESOUND_BUILD_NUMBER to stamp a release.
 EOF
 }
 
@@ -27,6 +28,15 @@ for argument in "$@"; do
     *) printf 'Unknown argument: %s\n' "$argument" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+if [[ -n "${FREESOUND_VERSION:-}" && ! "$FREESOUND_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  printf 'FREESOUND_VERSION must be X.Y.Z.\n' >&2
+  exit 2
+fi
+if [[ -n "${FREESOUND_BUILD_NUMBER:-}" && ! "$FREESOUND_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'FREESOUND_BUILD_NUMBER must be a positive integer.\n' >&2
+  exit 2
+fi
 
 if [[ "$(uname -s)" != Darwin ]]; then
   printf 'FreeSound requires macOS.\n' >&2
@@ -53,7 +63,14 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 /usr/bin/install -m 755 "$EXECUTABLE_DIR/FreeSound" "$APP_BUNDLE/Contents/MacOS/FreeSound"
 /usr/bin/install -m 644 "$PROJECT_DIR/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+if [[ -n "${FREESOUND_VERSION:-}" ]]; then
+  /usr/bin/plutil -replace CFBundleShortVersionString -string "$FREESOUND_VERSION" "$APP_BUNDLE/Contents/Info.plist"
+fi
+if [[ -n "${FREESOUND_BUILD_NUMBER:-}" ]]; then
+  /usr/bin/plutil -replace CFBundleVersion -string "$FREESOUND_BUILD_NUMBER" "$APP_BUNDLE/Contents/Info.plist"
+fi
 /usr/bin/install -m 644 "$ICON_DIR/FreeSound.icns" "$APP_BUNDLE/Contents/Resources/FreeSound.icns"
+/usr/bin/install -m 644 "$PROJECT_DIR/LICENSE" "$APP_BUNDLE/Contents/Resources/LICENSE.txt"
 /usr/bin/plutil -lint "$APP_BUNDLE/Contents/Info.plist"
 
 # Ad hoc signing needs no Apple account, certificate, or paid membership.

@@ -1,0 +1,113 @@
+name: Build and release
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Validate release version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Release tags must use vX.Y.Z.' >&2
+            exit 1
+          fi
+          echo "FREESOUND_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "FREESOUND_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: ./scripts/test.sh
+
+      - name: Build and package
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+          ./scripts/package.sh
+
+      - name: Upload app archive and checksum
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: FreeSound-${{ matrix.arch }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: FreeSound-*
+          merge-multiple: true
+          path: release
+
+      - name: Verify downloads
+        working-directory: release
+        run: |
+          test "$(find . -name '*.zip' | wc -l)" -eq 2
+          test "$(find . -name '*.sha256' | wc -l)" -eq 2
+          sha256sum --check ./*.sha256
+
+      - name: Publish release with both apps
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          cat > notes.md <<'EOF'
+          Download **arm64** for Apple Silicon or **x86_64** for Intel. Requires macOS 14.2 or later.
+
+          Unzip and move FreeSound.app to Applications. Open it and click the waveform icon in the macOS menu bar. Right-click the icon to show or quit FreeSound.
+
+          These builds are ad hoc signed, not Apple-notarized. macOS may block the first launch; after attempting to open the app, use System Settings → Privacy & Security → Open Anyway if you trust this release. SHA-256 checksums are included.
+          EOF
+          # Keep assets unpublished until both architectures have uploaded.
+          # A failed upload can be retried against the existing draft.
+          if gh release view "$GITHUB_REF_NAME" --json isDraft > release.json; then
+            if [[ "$(jq -r .isDraft release.json)" != true ]]; then
+              echo 'This version is already published; create a new version tag.' >&2
+              exit 1
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
+              --title "FreeSound $GITHUB_REF_NAME" --notes-file notes.md --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" release/*.zip release/*.sha256 --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false
