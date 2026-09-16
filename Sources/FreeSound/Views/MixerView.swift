@@ -33,11 +33,12 @@ struct MixerView: View {
             applications
                 .padding(.top, 26)
         }
-        .frame(minWidth: 480, idealWidth: 520, maxWidth: .infinity, minHeight: 640)
+        .frame(minWidth: 440, maxWidth: .infinity, minHeight: 520)
         .background(MixerTheme.background)
         .foregroundStyle(MixerTheme.primary)
         .tint(MixerTheme.accent)
         .preferredColorScheme(.dark)
+        .onExitCommand { NSApplication.shared.keyWindow?.orderOut(nil) }
     }
 
     private var toolbar: some View {
@@ -49,8 +50,9 @@ struct MixerView: View {
             }.buttonStyle(ToolButtonStyle()).help(audio.preferences.pinned ? "Unpin" : "Keep on top")
             settingsMenu
         }
-        .padding(.horizontal, 14)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
     }
 
     private var soundEffects: some View {
@@ -186,25 +188,60 @@ struct DevicePriorityList: View {
     @ObservedObject var audio: AudioController
     let role: SystemAudioRole
     private let rowHeight: CGFloat = 32
+    @State private var draggingUID: String?
+    @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         let entries = audio.priorityEntries(for: role)
-        List {
+        VStack(spacing: 0) {
             ForEach(entries) { entry in
-                DeviceRow(audio: audio, role: role, entry: entry, count: entries.count)
+                DeviceRow(audio: audio, role: role, entry: entry, count: entries.count, lifted: draggingUID == entry.id)
                     .frame(height: rowHeight)
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                    .offset(y: offset(for: entry, in: entries))
+                    .zIndex(draggingUID == entry.id ? 1 : 0)
+                    .animation(draggingUID == entry.id ? nil : .easeOut(duration: 0.15), value: projectedIndex(in: entries))
+                    .gesture(dragGesture(for: entry, in: entries), including: entries.count > 1 ? .all : .none)
             }
-            .onMove { audio.movePriority(for: role, fromOffsets: $0, toOffset: $1) }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .scrollDisabled(true)
-        .environment(\.defaultMinListRowHeight, rowHeight)
-        .frame(height: CGFloat(max(entries.count, 1)) * rowHeight)
         .padding(.vertical, 4)
+    }
+
+    private func sourceIndex(in entries: [PriorityEntry]) -> Int? {
+        entries.firstIndex { $0.id == draggingUID }
+    }
+
+    /// Where the lifted row would land if released now.
+    private func projectedIndex(in entries: [PriorityEntry]) -> Int? {
+        guard let source = sourceIndex(in: entries) else { return nil }
+        let steps = Int((dragOffset / rowHeight).rounded())
+        return min(max(source + steps, 0), entries.count - 1)
+    }
+
+    private func offset(for entry: PriorityEntry, in entries: [PriorityEntry]) -> CGFloat {
+        guard let source = sourceIndex(in: entries), let target = projectedIndex(in: entries),
+              let index = entries.firstIndex(where: { $0.id == entry.id }) else { return 0 }
+        if index == source { return dragOffset }
+        if source < index, index <= target { return -rowHeight }
+        if target <= index, index < source { return rowHeight }
+        return 0
+    }
+
+    private func dragGesture(for entry: PriorityEntry, in entries: [PriorityEntry]) -> some Gesture {
+        DragGesture(minimumDistance: 3, coordinateSpace: .local)
+            .onChanged { value in
+                if draggingUID == nil { draggingUID = entry.id }
+                guard draggingUID == entry.id, let source = sourceIndex(in: entries) else { return }
+                let lowest = -CGFloat(source) * rowHeight
+                let highest = CGFloat(entries.count - 1 - source) * rowHeight
+                dragOffset = min(max(value.translation.height, lowest - 6), highest + 6)
+            }
+            .onEnded { _ in
+                if let source = sourceIndex(in: entries), let target = projectedIndex(in: entries), target != source {
+                    audio.movePriority(for: role, uid: entry.id, by: target - source)
+                }
+                draggingUID = nil
+                dragOffset = 0
+            }
     }
 }
 
@@ -213,6 +250,7 @@ struct DeviceRow: View {
     let role: SystemAudioRole
     let entry: PriorityEntry
     let count: Int
+    var lifted = false
     @State private var hovering = false
 
     private var nameColor: Color {
@@ -244,11 +282,16 @@ struct DeviceRow: View {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(MixerTheme.tertiary)
-                .opacity(hovering && count > 1 ? 1 : 0)
+                .opacity((hovering || lifted) && count > 1 ? 1 : 0)
         }
-        .padding(.leading, 14).padding(.trailing, 12)
+        .padding(.leading, 8).padding(.trailing, 6)
+        .frame(maxWidth: .infinity, minHeight: 30)
         .contentShape(Rectangle())
-        .background(hovering && entry.connected && !entry.active ? Color.white.opacity(0.035) : .clear)
+        .background(lifted ? Color(red: 0.19, green: 0.205, blue: 0.22) : hovering && entry.connected && !entry.active ? Color.white.opacity(0.035) : .clear,
+                    in: RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(lifted ? 0.35 : 0), radius: 8, y: 3)
+        .padding(.horizontal, 6).padding(.vertical, 1)
+        .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { if entry.connected, !entry.active { audio.useDevice(entry.device.uid, for: role) } }
         .contextMenu {
@@ -287,6 +330,17 @@ struct ApplicationRow: View {
                             .overlay(Circle().stroke(MixerTheme.background, lineWidth: 2)).offset(x: 2, y: 2)
                     }
                 }
+                .overlay(alignment: .topLeading) {
+                    Button { audio.update(app.id) { $0.favorite.toggle() } } label: {
+                        Image(systemName: "star.fill").font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(settings.favorite ? MixerTheme.accent : MixerTheme.secondary)
+                            .frame(width: 14, height: 14)
+                            .background(MixerTheme.background, in: Circle())
+                    }
+                    .buttonStyle(.plain).opacity(settings.favorite || hovering ? 1 : 0).offset(x: -5, y: -5)
+                    .accessibilityLabel(settings.favorite ? "Remove \(app.name) from favorites" : "Favorite \(app.name)")
+                    .help(settings.favorite ? "Remove favorite" : "Favorite")
+                }
                 Text(app.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 if settings.outputUID != nil {
                     Image(systemName: routeAvailable ? "arrow.turn.up.right" : "exclamationmark.arrow.triangle.2.circlepath")
@@ -294,19 +348,11 @@ struct ApplicationRow: View {
                         .foregroundStyle(routeAvailable ? MixerTheme.accent : .orange)
                         .help(routeAvailable ? "Playing on \(routeName)" : "\(routeName) is not connected, using the system output")
                 }
-                Button { audio.update(app.id) { $0.favorite.toggle() } } label: {
-                    Image(systemName: settings.favorite ? "star.fill" : "star").font(.system(size: 11))
-                        .foregroundStyle(settings.favorite ? MixerTheme.accent : MixerTheme.tertiary)
-                        .frame(width: 18, height: 18)
-                }
-                .buttonStyle(.plain).opacity(settings.favorite || hovering ? 1 : 0)
-                .accessibilityLabel(settings.favorite ? "Remove \(app.name) from favorites" : "Favorite \(app.name)")
-                .help(settings.favorite ? "Remove favorite" : "Favorite")
                 Spacer(minLength: 6)
                 VolumeControl(value: Binding(get: { Double(settings.volume) }, set: { value in audio.update(app.id) { $0.volume = Float(value) } }),
                               muted: settings.muted, available: !app.processIDs.isEmpty, canMute: !app.processIDs.isEmpty, maximum: settings.boost ? 2 : 1,
                               showValueWhenDisabled: true, label: app.name, toggleMute: { audio.update(app.id) { $0.muted.toggle() } })
-                    .frame(width: 180)
+                    .frame(width: 176)
                 Button { withAnimation(.easeInOut(duration: 0.16)) { expanded.toggle() } } label: {
                     Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).rotationEffect(.degrees(expanded ? 90 : 0))
                         .frame(width: 20, height: 24)
@@ -349,7 +395,7 @@ struct ApplicationRow: View {
                     }
                 } label: {
                     DeviceLabel(name: routeName, symbol: settings.outputUID == nil ? "arrow.turn.up.right" : routeAvailable ? "headphones" : "exclamationmark.triangle")
-                }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 200).disabled(app.processIDs.isEmpty)
+                }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 180).disabled(app.processIDs.isEmpty)
                 Spacer()
                 Button("Reset") {
                     audio.update(app.id) { let favorite = $0.favorite; $0 = AppAudioSettings(favorite: favorite) }
@@ -400,7 +446,7 @@ struct VolumeControl: View {
                 .accessibilityValue(available || showValueWhenDisabled ? "\(Int(value * 100)) percent" : "Device has fixed volume")
             Text(available || showValueWhenDisabled ? "\(Int((value * 100).rounded()))%" : "Fixed")
                 .font(.system(size: 11, weight: .medium)).monospacedDigit()
-                .foregroundStyle(available ? MixerTheme.primary.opacity(0.8) : MixerTheme.tertiary).frame(width: 38, alignment: .trailing)
+                .foregroundStyle(available ? MixerTheme.primary.opacity(0.8) : MixerTheme.tertiary).frame(width: 36, alignment: .trailing)
         }
     }
 }

@@ -100,7 +100,7 @@ Start at a comfortable hardware volume with two applications playing different, 
 | Process lifecycle | Start, quit, and reopen a media app; test a browser with helper processes. Confirm rows and routes follow the correct application and saved settings reapply. |
 | Sleep and recovery | Sleep/wake with a route active; also change Bluetooth profiles where available. Verify playback resumes or an actionable error is shown. |
 | Exit and reset | Turn off App controls, reset an app, reset all mixes, and quit in separate trials. Each should restore affected apps' ordinary playback; resetting preserves favorites. |
-| Persistence and window | Relaunch and verify saved mix, favorites, filter, window position, and pin state. Closing the window should leave audio processing running; the menu bar icon should reopen it. |
+| Persistence and window | Relaunch and verify saved mix, favorites, filter, and pin state. The window should appear under the menu bar at the top right of the screen with the menu bar item, hide when another app is clicked unless pinned, hide on Escape, and leave audio processing running while hidden; the menu bar icon should reopen it. |
 | Launch at login | Install in `~/Applications`, enable the setting, approve the login item if requested, then log out/in. Expect one running copy and the mixer window shown. Disable the setting and verify the login item is removed. |
 
 Long playback sessions, CPU load, audible latency, dropouts, protected media, Bluetooth profile switching, and crash/driver failure recovery remain hardware validation work. Synthetic tests do not cover these conditions.

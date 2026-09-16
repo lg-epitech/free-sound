@@ -24,7 +24,7 @@ Then build and launch the app:
 ./scripts/run.sh
 ```
 
-The mixer window opens when FreeSound launches. Use its waveform icon in the menu bar to show or hide it. Closing the window keeps the mixer running; choose **Quit FreeSound** in the gear menu to stop it. FreeSound does not appear in the Dock.
+The mixer opens under the menu bar at the top right of the screen when FreeSound launches. Use its waveform icon in the menu bar to show or hide it. Like a menu bar panel, it goes away when you click elsewhere or press Escape; use the pin to keep it on top. Hiding it keeps the mixer running; choose **Quit FreeSound** in the gear menu to stop it. FreeSound does not appear in the Dock.
 
 To build without launching, run `./scripts/build.sh`. The result is `dist/FreeSound.app`. To copy it into your user Applications folder, run `./scripts/build.sh --install`, then open `~/Applications/FreeSound.app`. Quit a running copy before replacing it. `--debug` is also available on both scripts.
 
@@ -39,7 +39,7 @@ The scripts create an original app icon and sign the bundle locally. No Apple de
 - Send an application's audio to a chosen output device.
 - Adjust stereo balance and optionally boost an app up to 200%.
 - Search applications, keep favorites, and remember mixer preferences between launches.
-- Pin the mixer above other windows and optionally launch at login.
+- Pin the mixer so it stays on top, and optionally launch at login.
 
 The **Output** and **Input** lists are priority lists. Drag a device to change its rank, or right-click it for **Move to top**, **Move up**, and **Move down**. The first connected device in the list is in use and shown in green. Clicking another connected device switches to it until the next time a device appears or disappears, when the list is applied again. A device that has been unplugged stays in the list as **Not connected**, keeps its rank, and is used again as soon as it comes back if nothing above it is connected. Hover an unplugged device and click the cross to forget it. A device seen for the first time is placed at the top of the list, which matches what macOS does when you plug in headphones.
 
