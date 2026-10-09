@@ -16,6 +16,10 @@ xcrun swiftc Sources/FreeSound/Models/AudioPreferences.swift Sources/FreeSound/M
   -o "$CHECK_DIR/preferences"
 "$CHECK_DIR/preferences"
 
+xcrun swiftc Sources/FreeSound/MixerPanel.swift Tests/MixerPanelChecks/main.swift \
+  -o "$CHECK_DIR/mixer-panel"
+"$CHECK_DIR/mixer-panel"
+
 xcrun swiftc Sources/FreeSound/Audio/SystemAudio.swift Tests/SystemAudioChecks/main.swift \
   -o "$CHECK_DIR/system-audio"
 "$CHECK_DIR/system-audio"

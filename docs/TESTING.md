@@ -2,13 +2,14 @@
 
 ## Architecture
 
-FreeSound is a native SwiftUI view hosted in an AppKit window, with a menu bar item. `LSUIElement` and the accessory activation policy keep it out of the Dock. Closing the window hides it; quitting tears down audio processing. Launch at login uses `SMAppService.mainApp` and follows the same startup path, including showing the mixer.
+FreeSound is a native SwiftUI view hosted in a nonactivating AppKit panel, with a menu bar item. `LSUIElement` and the accessory activation policy keep it out of the Dock. The panel floats over the current workspace without activating FreeSound, and stays at the top right of the display under the pointer. Closing the panel hides it; quitting tears down audio processing. Launch at login uses `SMAppService.mainApp` and follows the same startup path, including showing the mixer.
 
 The waveform menu bar item remembers its position and supports a normal click to toggle the mixer or a right/Control-click for Show and Quit. Verify these on a desktop with enough menu bar space; macOS can hide items on crowded or notched displays.
 
 | Component | Responsibility |
 | --- | --- |
 | `FreeSoundApp.swift` | Application lifecycle, window, menu bar item, read-only JSON diagnostics, and view snapshots. |
+| `MixerPanel.swift` | Nonactivating, immovable menu bar overlay and display placement. |
 | `Views/MixerView.swift` | Output and input priority lists, hardware volume, app controls, favorites, filtering, and errors. |
 | `Models/AudioController.swift` | Main-thread coordination, process grouping, device discovery, device priority enforcement, route reconciliation, and login item registration. Devices and processes refresh every 1.5 seconds. |
 | `Models/AudioPreferences.swift` | JSON preferences in `UserDefaults`, keyed by application bundle identity. Stores volume, mute, balance, route UID, favorite, boost, window options, and device priorities. Every key is optional so older preferences keep loading. |
@@ -43,6 +44,8 @@ Update this table only after executing the corresponding check. A successful bui
 
 Menu bar and release changes were checked on September 16, 2026 with Swift 6.3 and macOS 26.5. The current Apple Silicon build passed all five DSP groups, 31 preference/priority checks, and read-only device checks. ZIP extraction, executable permissions, signature, checksum, version/build stamping, invalid metadata rejection, Actionlint 1.7.12, and shell syntax were checked. Computer use confirmed FreeSound was allowed in macOS Menu Bar settings; refreshing that setting and fully restarting the installed app restored its waveform icon, verified in a full-screen capture immediately left of Wi-Fi. The menu bar right-click interaction has not yet been manually verified.
 
+The panel fixes were checked on October 9, 2026 with macOS 26.7.1 and AeroSpace running. A native panel first shown on workspace 2 was hidden and reopened five times on workspace 1; every show and hide preserved workspace 1 and the frontmost app. Placement checks cover negative display origins, shorter visible frames, and restoring the intended height on a larger display. An isolated app bundle accepted text in the actual SwiftUI search field and filtered the app list. Only the built-in display was connected, so physical multi-display switching and full-screen overlays remain manual checks. Opening preserves the previous app's keyboard focus; Escape dismisses the panel after interacting with its controls.
+
 ## Automated checks
 
 ```sh
@@ -55,6 +58,8 @@ Menu bar and release changes were checked on September 16, 2026 with Swift 6.3 a
 `scripts/test.sh` compiles standalone C and Swift programs. This avoids the XCTest dependency, which is unavailable with the installed Command Line Tools alone. The C program runs with AddressSanitizer and UndefinedBehaviorSanitizer.
 
 The checks cover synthetic interleaved and planar audio, disabled microphone stream offsets, preferred output channels, gain, balance, mono, mute smoothing, short input buffers, sample bounds, nonfinite values, preference persistence, normalization, and default settings that do not require processing. The live Core Audio check reads device/process properties, validates IDs and capabilities, and repeats discovery. These checks do not create process taps or change live audio devices.
+
+Panel checks cover placement on displays with different global origins and available heights. To briefly show a real panel and check that reopening preserves focus while search can accept keyboard input, run `.build/checks/mixer-panel --presentation` after the test script. This opt-in check needs a logged-in desktop session and does not start the audio controller.
 
 GitHub Actions runs these checks and packages the app on macOS 15 runners for Apple Silicon and Intel. Hosted runners do not establish real hardware routing or audible results. Packaging verifies the executable architecture, extracts the ZIP, checks executable permissions and the extracted signature, and verifies its SHA-256 checksum. Version tags publish both archives only after both build jobs pass.
 
@@ -126,7 +131,7 @@ Start at a comfortable hardware volume with two applications playing different, 
 | Process lifecycle | Start, quit, and reopen a media app; test a browser with helper processes. Confirm rows and routes follow the correct application and saved settings reapply. |
 | Sleep and recovery | Sleep/wake with a route active; also change Bluetooth profiles where available. Verify playback resumes or an actionable error is shown. |
 | Exit and reset | Turn off App controls, reset an app, reset all mixes, and quit in separate trials. Each should restore affected apps' ordinary playback; resetting preserves favorites. |
-| Persistence and window | Relaunch and verify saved mix, favorites, filter, and pin state. The window should appear under the menu bar at the top right of the screen with the menu bar item, hide when another app is clicked unless pinned, hide on Escape, and leave audio processing running while hidden; the menu bar icon should reopen it. |
+| Persistence and window | Relaunch and verify saved mix, favorites, filter, and pin state. The panel should appear at a fixed position under the menu bar at the top right of the clicked display, preserve the current app and workspace, and resist dragging/resizing. Open on one workspace, close, switch workspaces, and repeatedly toggle the icon; the workspace must stay unchanged. Outside clicks hide it unless pinned; Escape hides it after interacting with the panel's controls. Audio processing continues while hidden. Repeat on each connected display and over a full-screen app. |
 | Launch at login | Install in `~/Applications`, enable the setting, approve the login item if requested, then log out/in. Expect one running copy and the mixer window shown. Disable the setting and verify the login item is removed. |
 
 Long playback sessions, CPU load, audible latency, dropouts, protected media, Bluetooth profile switching, and crash/driver failure recovery remain hardware validation work. Synthetic tests do not cover these conditions.

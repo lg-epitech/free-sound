@@ -24,7 +24,7 @@ Or build it yourself. You need macOS 14.2 or later and the Command Line Tools (`
 
 ## Using it
 
-Click the waveform in the menu bar. The mixer drops down at the top right. Click anywhere else and it goes away. Pin it if you want it to stay.
+Click the waveform in the menu bar. The mixer opens at a fixed position at the top right of that screen, without activating FreeSound or switching workspaces. Click anywhere else and it goes away. Pin it if you want it to stay.
 
 Output and Input are ranked lists. Number one is what you want, number two is the fallback, and so on. Drag to reorder. The first connected device in the list is the one in use, shown in green. Unplug it and the next one takes over. Plug it back in and it takes over again. A device you've unplugged stays in the list as "Not connected" so it keeps its place. Hover it and click the cross to forget it.
 

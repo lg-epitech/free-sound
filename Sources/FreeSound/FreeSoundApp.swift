@@ -52,10 +52,8 @@ struct FreeSoundMain {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var controller: AudioController!
     private var statusItem: NSStatusItem!
-    private var window: NSWindow!
-    private var pinObserver: NSObjectProtocol?
-    private static let width: CGFloat = 440
-    private static let screenInset: CGFloat = 8
+    private var window: MixerPanel!
+    private var outsideClickMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = AudioController()
@@ -74,27 +72,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.action = #selector(statusItemClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 720),
-                          styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-                          backing: .buffered, defer: false)
-        window.title = "FreeSound"
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            window.standardWindowButton(button)?.isHidden = true
-        }
+        window = MixerPanel()
         window.backgroundColor = NSColor(MixerTheme.background)
         window.appearance = NSAppearance(named: .darkAqua)
-        window.isMovableByWindowBackground = false
-        window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: Self.width, height: 520)
-        window.maxSize = NSSize(width: Self.width, height: 1600)
-        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.delegate = self
         window.contentView = NSHostingView(rootView: MixerView(audio: controller).background(MixerTheme.background).ignoresSafeArea(.container, edges: .top))
-        updatePin()
-        pinObserver = NotificationCenter.default.addObserver(forName: .freeSoundPinChanged, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.updatePin() }
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.dismissUnpinnedMixer() }
         }
         showMixer()
         if let index = CommandLine.arguments.firstIndex(of: "--snapshot"), CommandLine.arguments.indices.contains(index + 1) {
@@ -111,7 +95,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return true
     }
 
-    func applicationWillTerminate(_ notification: Notification) { controller?.shutdown() }
+    func applicationWillTerminate(_ notification: Notification) {
+        if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
+        controller?.shutdown()
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -120,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func toggleMixer() {
-        if window.isVisible && window.isKeyWindow { window.orderOut(nil) }
+        if window.isVisible && window.screen == MixerPanel.screen() { window.orderOut(nil) }
         else { showMixer() }
     }
 
@@ -142,27 +129,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func showMixer() {
-        anchorWindow()
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-    }
-
-    /// Sits just under the menu bar in the top right corner of the screen that holds the menu bar item.
-    private func anchorWindow() {
-        guard let screen = statusItem.button?.window?.screen ?? NSScreen.main else { return }
-        let area = screen.visibleFrame
-        let height = min(window.frame.height, area.height - Self.screenInset * 2)
-        let origin = NSPoint(x: area.maxX - Self.width - Self.screenInset, y: area.maxY - height - Self.screenInset)
-        window.setFrame(NSRect(origin: origin, size: NSSize(width: Self.width, height: height)), display: true)
+        guard let screen = MixerPanel.screen() else { return }
+        window.show(on: screen)
     }
 
     /// Unpinned, the mixer behaves like a menu bar panel and goes away when something else is used.
     func windowDidResignKey(_ notification: Notification) {
+        dismissUnpinnedMixer()
+    }
+
+    private func dismissUnpinnedMixer() {
         guard !controller.preferences.pinned, !CommandLine.arguments.contains("--snapshot") else { return }
         window.orderOut(nil)
     }
-
-    private func updatePin() { window.level = controller.preferences.pinned ? .floating : .normal }
 
     private func configureMenu() {
         let main = NSMenu()
